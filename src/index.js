@@ -155,13 +155,42 @@ async function promptForManualLogin(page) {
   await waitForEnter('[index] Press Enter here once you are done (or just press Enter to skip and search anyway)...\n');
 }
 
+const MANUAL_LOGIN_FALLBACK_SECONDS = 45;
+
+// readline only actually blocks when stdin is a real interactive terminal.
+// If this is launched in a context without one (an IDE "run" button, a
+// non-interactive shell, stdin redirected/closed), rl.question() can resolve
+// immediately or never fire its callback at all - either way the pause
+// silently fails to give you any real chance to log in. Detect that case and
+// fall back to a fixed, clearly-announced wait instead of trusting readline.
 function waitForEnter(promptText) {
+  if (!process.stdin.isTTY) {
+    console.log('[index] No interactive terminal detected, so Enter-to-continue will not work here.');
+    console.log(`[index] Waiting ${MANUAL_LOGIN_FALLBACK_SECONDS}s instead - log in in the Chrome window now.`);
+    return countdown(MANUAL_LOGIN_FALLBACK_SECONDS);
+  }
+
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(promptText, () => {
       rl.close();
       resolve();
     });
+  });
+}
+
+function countdown(totalSeconds) {
+  return new Promise((resolve) => {
+    let remaining = totalSeconds;
+    const interval = setInterval(() => {
+      remaining -= 5;
+      if (remaining > 0) {
+        console.log(`[index] ...${remaining}s remaining`);
+      } else {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 5000);
   });
 }
 

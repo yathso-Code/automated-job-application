@@ -37,40 +37,42 @@ async function fetchJobLinks(page, { role = DEFAULT_ROLE, location = DEFAULT_LOC
   const city = location.split(',')[0].trim();
   const query = `${role} job in ${city}`;
 
-  // Naukri's own search is the primary source: it's the actual target ATS for
-  // this search, India-focused, and returns live listings directly - unlike
-  // Google (CAPTCHAs automated queries almost instantly, even on a real
-  // logged-in profile) or Bing (often ignores site: filters and returns
-  // generic articles instead of live postings).
+  // Every source is tried every round, in this order, rather than stopping
+  // once the link COUNT looks sufficient. Naukri in particular can supply all
+  // 15 slots on its own, but every one of those requires being logged into
+  // Naukri specifically - so if that login isn't working, a count-based cutoff
+  // would starve the other sources of a chance to contribute links that don't
+  // have that problem (a plain external ATS form just needs filling in).
+  //
+  // Google is attempted first (it's the natural way to search the web for
+  // this), but in practice it CAPTCHAs automated queries almost immediately,
+  // even from a real logged-in profile - confirmed repeatedly, not a
+  // one-off. Bing is more permissive but often ignores site: filters and
+  // returns generic articles instead of live postings. Naukri goes last:
+  // it's the most reliable source of real listings, but currently the one
+  // most likely to end in "needs its own login" rather than a submission.
+  try {
+    await searchGoogle(page, query, collected);
+  } catch (err) {
+    console.warn(`[searcher] Google search failed for "${query}": ${err.message}`);
+  }
+
+  try {
+    await searchBing(page, query, collected);
+  } catch (err) {
+    console.warn(`[searcher] Bing search failed for "${query}": ${err.message}`);
+  }
+
+  try {
+    await searchIndeed(page, role, city, collected);
+  } catch (err) {
+    console.warn(`[searcher] Indeed search failed: ${err.message}`);
+  }
+
   try {
     await searchNaukri(page, role, city, collected);
   } catch (err) {
     console.warn(`[searcher] Naukri search failed: ${err.message}`);
-  }
-
-  if (collected.size < MAX_RESULTS) {
-    try {
-      await searchIndeed(page, role, city, collected);
-    } catch (err) {
-      console.warn(`[searcher] Indeed search failed: ${err.message}`);
-    }
-  }
-
-  if (collected.size < MAX_RESULTS) {
-    try {
-      await searchGoogle(page, query, collected);
-    } catch (err) {
-      console.warn(`[searcher] Google search failed for "${query}": ${err.message}`);
-    }
-  }
-
-  if (collected.size === 0) {
-    console.warn('[searcher] Google returned no usable results (likely blocked or showing a CAPTCHA). Falling back to Bing.');
-    try {
-      await searchBing(page, query, collected);
-    } catch (err) {
-      console.warn(`[searcher] Bing search failed for "${query}": ${err.message}`);
-    }
   }
 
   return Array.from(collected.values());
